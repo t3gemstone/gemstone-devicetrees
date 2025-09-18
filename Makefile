@@ -1,4 +1,3 @@
-
 DTC ?= dtc
 CPP ?= cpp
 KERNEL_VERSION ?= $(shell uname -r)
@@ -115,7 +114,8 @@ install_arm64:
 
 ifeq ($(ARCH),)
 
-ALL_DTS		:= $(shell find src/* -name \*.dts)
+# Filter DTS files to only include those containing "t3-gem-o1"
+ALL_DTS		:= $(shell find src/* -name \*.dts | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
 
 ALL_DTB		:= $(patsubst %.dts,%.dtb,$(ALL_DTS))
 
@@ -123,16 +123,23 @@ $(ALL_DTB): ARCH=$(word 2,$(subst /, ,$@))
 $(ALL_DTB): FORCE
 	$(Q)$(MAKE) ARCH=$(ARCH) $@
 
-# DT overlays
-ALL_DTS_OVERLAYS	:= $(shell find src/*/overlays -name \*.dts)
-ALL_DTB_OVERLAYS	:= $(patsubst %.dtbo,%.dtb,$(ALL_DTS))
-$(ALL_DTB_OVERLAYS): ARCH=$(word 2,$(subst /, ,$@))
-$(ALL_DTB_OVERLAYS): FORCE
+# DT overlays - support both .dts and .dtso files, filter for "t3-gem-o1"
+ALL_DTS_OVERLAYS	:= $(shell find src/*/overlays -name \*.dts 2>/dev/null | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
+ALL_DTSO_OVERLAYS	:= $(shell find src/*/overlays -name \*.dtso 2>/dev/null | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
+ALL_DTB_OVERLAYS	:= $(patsubst %.dts,%.dtbo,$(ALL_DTS_OVERLAYS)) $(patsubst %.dtso,%.dtbo,$(ALL_DTSO_OVERLAYS))
+
+$(patsubst %.dts,%.dtbo,$(ALL_DTS_OVERLAYS)): ARCH=$(word 2,$(subst /, ,$@))
+$(patsubst %.dts,%.dtbo,$(ALL_DTS_OVERLAYS)): FORCE
+	$(Q)$(MAKE) ARCH=$(ARCH) $@
+
+$(patsubst %.dtso,%.dtbo,$(ALL_DTSO_OVERLAYS)): ARCH=$(word 2,$(subst /, ,$@))
+$(patsubst %.dtso,%.dtbo,$(ALL_DTSO_OVERLAYS)): FORCE
 	$(Q)$(MAKE) ARCH=$(ARCH) $@
 
 else
 
-ARCH_DTS	:= $(shell find src/$(ARCH) -name \*.dts)
+# Filter DTS files to only include those containing "t3-gem-o1"
+ARCH_DTS	:= $(shell find src/$(ARCH) -name \*.dts | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
 
 ARCH_DTB	:= $(patsubst %.dts,%.dtb,$(ARCH_DTS))
 
@@ -147,9 +154,11 @@ ifneq ($(cmd_files),)
   include $(cmd_files)
 endif
 
-# Overlays
-ARCH_DTS_OVERLAYS	:= $(shell find src/$(ARCH)/overlays -name \*.dts)
-ARCH_DTB_OVERLAYS	:= $(patsubst %.dts,%.dtbo,$(ARCH_DTS_OVERLAYS))
+# Overlays - support both .dts and .dtso files, filter for "t3-gem-o1"
+ARCH_DTS_OVERLAYS	:= $(shell find src/$(ARCH)/overlays -name \*.dts 2>/dev/null | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
+ARCH_DTSO_OVERLAYS	:= $(shell find src/$(ARCH)/overlays -name \*.dtso 2>/dev/null | xargs grep -l "t3-gem-o1" 2>/dev/null || true)
+ARCH_DTB_OVERLAYS	:= $(patsubst %.dts,%.dtbo,$(ARCH_DTS_OVERLAYS)) $(patsubst %.dtso,%.dtbo,$(ARCH_DTSO_OVERLAYS))
+
 src_overlays		:= src/$(ARCH)/overlays
 obj_overlays		:= src/$(ARCH)/overlays
 cmd_files_overlays 	:= $(wildcard $(foreach f,$(ARCH_DTB_OVERLAYS),$(dir $(f)).$(notdir $(f)).cmd))
@@ -158,7 +167,12 @@ ifneq ($(cmd_files_overlays),)
   include $(cmd_files_overlays)
 endif
 
+# Rule for .dts overlay files
 $(obj_overlays)/%.dtbo: $(src_overlays)/%.dts FORCE
+	$(call if_changed_dep,dtc)
+
+# Rule for .dtso overlay files
+$(obj_overlays)/%.dtbo: $(src_overlays)/%.dtso FORCE
 	$(call if_changed_dep,dtc)
 
 quiet_cmd_clean    = CLEAN   $(obj) & $(obj_overlays)
@@ -216,17 +230,19 @@ endif
 
 help:
 	@echo "Targets:"
-	@echo "  all:                   Build all device tree binaries for all architectures"
+	@echo "  all:                   Build all device tree binaries for all architectures (t3-gem-o1 only)"
 	@echo "  clean:                 Clean all generated files"
 	@echo "  install:               Install all generated files (sudo)"
 	@echo ""
-	@echo "  all_<ARCH>:            Build all device tree binaries for <ARCH>"
+	@echo "  all_<ARCH>:            Build all device tree binaries for <ARCH> (t3-gem-o1 only)"
 	@echo "  clean_<ARCH>:          Clean all generated files for <ARCH>"
 	@echo "  install_<ARCH>:        Install all generated files for <ARCH> (sudo)"
 	@echo ""
 	@echo "  src/<ARCH>/<DTS>.dtb   Build a single device tree binary"
 	@echo ""
 	@echo "Architectures: $(ALL_ARCHES)"
+	@echo ""
+	@echo "Note: Only files containing 't3-gem-o1' will be compiled"
 
 PHONY += FORCE
 FORCE:
